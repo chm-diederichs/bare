@@ -1003,8 +1003,6 @@ bare_runtime_teardown (bare_runtime_t *runtime, int *exit_code) {
 
     if (!runtime->process->runtime->exiting) {
       uv_close((uv_handle_t *) &runtime->signals.exit, bare_runtime_on_handle_close);
-    } else {
-      free(runtime);
     }
   }
 
