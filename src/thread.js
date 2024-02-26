@@ -1,7 +1,11 @@
 /* global bare, Bare */
 
-module.exports = exports = class Thread {
+const EventEmitter = require('bare-events')
+
+module.exports = exports = class Thread extends EventEmitter {
   constructor (filename, opts, callback) {
+    super()
+
     if (typeof filename === 'function') {
       callback = filename
       filename = '<thread>'
@@ -74,6 +78,11 @@ module.exports = exports = class Thread {
 
   static get isMainThread () {
     return bare.isMainThread
+  }
+
+  static hasExited (thread) {
+    if (!thread._handle) return true
+    return bare.checkThread(thread._handle) === 1
   }
 }
 

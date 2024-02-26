@@ -157,6 +157,12 @@ class Bare extends EventEmitter {
     this.emit('exit', bare.exitCode)
   }
 
+  _onthreadexit () {
+    for (const thread of exports.Thread._threads) {
+      if (exports.Thread.hasExited(thread)) thread.emit('exit')
+    }
+  }
+
   _onteardown () {
     this.emit('teardown')
   }
@@ -239,6 +245,7 @@ bare.onuncaughtexception = exports._onuncaughtexception.bind(exports)
 bare.onunhandledrejection = exports._onunhandledrejection.bind(exports)
 bare.onbeforeexit = exports._onbeforeexit.bind(exports)
 bare.onexit = exports._onexit.bind(exports)
+bare.onthreadexit = exports._onthreadexit.bind(exports)
 bare.onteardown = exports._onteardown.bind(exports)
 bare.onsuspend = exports._onsuspend.bind(exports)
 bare.onidle = exports._onidle.bind(exports)
