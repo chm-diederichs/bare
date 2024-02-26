@@ -246,6 +246,44 @@ bare_runtime_on_suspend_signal (uv_async_t *handle) {
 }
 
 static inline void
+bare_runtime_on_thread_exit (bare_runtime_t *runtime) {
+  int err;
+
+  js_env_t *env = runtime->env;
+
+  js_value_t *fn;
+  err = js_get_named_property(env, runtime->exports, "onthreadexit", &fn);
+  assert(err == 0);
+
+  bool is_set;
+  err = js_is_function(env, fn, &is_set);
+  assert(err == 0);
+
+  if (is_set) {
+    js_value_t *global;
+    err = js_get_global(env, &global);
+    assert(err == 0);
+
+    js_call_function(env, global, fn, 0, NULL, NULL);
+  }
+
+  if (bare_runtime_is_main_thread(runtime)) {
+    if (runtime->process->on_thread_exit) {
+      runtime->process->on_thread_exit((bare_t *) runtime->process, env);
+    }
+  }
+}
+
+static void
+bare_runtime_on_thread_exit_signal (uv_async_t *handle) {
+  bare_runtime_t *thread_runtime = (bare_runtime_t *) handle->data;
+
+  uv_unref((uv_handle_t *) &thread_runtime->signals.exit);
+
+  bare_runtime_on_thread_exit(thread_runtime->process->runtime);
+}
+
+static inline void
 bare_runtime_on_idle (bare_runtime_t *runtime) {
   int err;
 
@@ -761,6 +799,17 @@ bare_runtime_setup (uv_loop_t *loop, bare_process_t *process, bare_runtime_t *ru
 
   runtime->active_handles = 2;
 
+  if (!bare_runtime_is_main_thread(runtime)) {
+    err = uv_async_init(runtime->process->runtime->loop, &runtime->signals.exit, bare_runtime_on_thread_exit_signal);
+    assert(err == 0);
+
+    runtime->signals.exit.data = (void *) runtime;
+
+    uv_unref((uv_handle_t *) &runtime->signals.exit);
+
+    runtime->active_handles = 3;
+  }
+
   js_env_t *env = runtime->env;
 
   err = js_create_object(env, &runtime->exports);
@@ -923,6 +972,16 @@ bare_runtime_teardown (bare_runtime_t *runtime, int *exit_code) {
 
   uv_close((uv_handle_t *) &runtime->signals.suspend, bare_runtime_on_handle_close);
   uv_close((uv_handle_t *) &runtime->signals.resume, bare_runtime_on_handle_close);
+
+  if (runtime->active_handles > 0) {
+    uv_ref((uv_handle_t *) &runtime->signals.exit);
+
+    if (!runtime->process->runtime->exiting) {
+      uv_close((uv_handle_t *) &runtime->signals.exit, bare_runtime_on_handle_close);
+    } else {
+      free(runtime);
+    }
+  }
 
   err = uv_run(runtime->loop, UV_RUN_DEFAULT);
   assert(err == 0);

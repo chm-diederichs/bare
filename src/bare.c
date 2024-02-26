@@ -48,6 +48,7 @@ bare_setup (uv_loop_t *loop, js_platform_t *platform, js_env_t **env, int argc, 
   process->on_idle = NULL;
   process->on_resume = NULL;
   process->on_thread = NULL;
+  process->on_thread_exit = NULL;
 
   bare_runtime_t *runtime = process->runtime;
 
@@ -151,6 +152,13 @@ bare_on_resume (bare_t *bare, bare_resume_cb cb) {
 int
 bare_on_thread (bare_t *bare, bare_thread_cb cb) {
   bare->process.on_thread = cb;
+
+  return 0;
+}
+
+int
+bare_on_thread_exit (bare_t *bare, bare_thread_exit_cb cb) {
+  bare->process.on_thread_exit = cb;
 
   return 0;
 }

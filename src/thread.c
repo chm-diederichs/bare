@@ -109,6 +109,11 @@ bare_thread_entry (void *data) {
 
   thread->exited = true;
 
+  uv_ref((uv_handle_t *) &runtime->signals.exit);
+
+  err = uv_async_send(&runtime->signals.exit);
+  assert(err == 0);
+
   uv_sem_post(&thread->lock);
 
   err = bare_runtime_teardown(thread->runtime, NULL);

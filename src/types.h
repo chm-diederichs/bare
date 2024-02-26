@@ -27,6 +27,7 @@ struct bare_runtime_s {
   struct {
     uv_async_t suspend;
     uv_async_t resume;
+    uv_async_t exit;
   } signals;
 
   int active_handles;
@@ -52,6 +53,7 @@ struct bare_process_s {
   bare_idle_cb on_idle;
   bare_resume_cb on_resume;
   bare_thread_cb on_thread;
+  bare_thread_exit_cb on_thread_exit;
 };
 
 struct bare_source_s {
