@@ -695,6 +695,30 @@ bare_runtime_setup_thread (js_env_t *env, js_callback_info_t *info) {
 }
 
 static js_value_t *
+bare_runtime_check_thread (js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  bare_runtime_t *runtime;
+
+  size_t argc = 1;
+  js_value_t *argv[1];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, (void **) &runtime);
+  assert(err == 0);
+
+  assert(argc == 1);
+
+  bare_thread_t *thread;
+  err = js_get_value_external(env, argv[0], (void **) &thread);
+  assert(err == 0);
+
+  js_value_t *result;
+  js_create_int32(env, thread->exited == true ? 1 : 0, &result);
+
+  return result;
+}
+
+static js_value_t *
 bare_runtime_join_thread (js_env_t *env, js_callback_info_t *info) {
   int err;
 
@@ -919,6 +943,7 @@ bare_runtime_setup (uv_loop_t *loop, bare_process_t *process, bare_runtime_t *ru
   V("resume", bare_runtime_resume);
 
   V("setupThread", bare_runtime_setup_thread);
+  V("checkThread", bare_runtime_check_thread);
   V("joinThread", bare_runtime_join_thread);
   V("suspendThread", bare_runtime_suspend_thread);
   V("resumeThread", bare_runtime_resume_thread);
