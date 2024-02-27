@@ -789,6 +789,79 @@ bare_runtime_resume_thread (js_env_t *env, js_callback_info_t *info) {
   return NULL;
 }
 
+static js_value_t*
+bare_runtime_message_thread (js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  bare_runtime_t *runtime;
+
+  size_t argc = 2;
+  js_value_t *argv[2];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, (void **) &runtime);
+  assert(err == 0);
+
+  assert(argc == 2);
+
+  bare_thread_t *thread;
+  err = js_get_value_external(env, argv[0], (void **) &thread);
+  assert(err == 0);
+
+  bare_thread_message_t *message = malloc(sizeof(bare_thread_message_t));
+  bool has_message;
+
+  err = js_is_typedarray(env, argv[1], &has_message);
+  assert(err == 0);
+
+  if (has_message) {
+    err = js_get_typedarray_info(env, argv[1], NULL, (void **) &message->buffer.base, (size_t *) &message->buffer.len, NULL, NULL);
+    assert(err == 0);
+
+    message->type = bare_thread_message_buffer;
+  } else {
+    err = js_is_arraybuffer(env, argv[1], &has_message);
+    assert(err == 0);
+
+    if (has_message) {
+      err = js_get_arraybuffer_info(env, argv[1], (void **) &message->buffer.base, (size_t *) &message->buffer.len);
+      assert(err == 0);
+
+      message->type = bare_thread_message_arraybuffer;
+    } else {
+      err = js_is_sharedarraybuffer(env, argv[1], &has_message);
+      assert(err == 0);
+
+      if (has_message) {
+        err = js_get_sharedarraybuffer_backing_store(env, argv[1], &message->backing_store);
+        assert(err == 0);
+
+        message->type = bare_thread_message_sharedarraybuffer;
+      } else {
+        err = js_is_external(env, argv[1], &has_message);
+        assert(err == 0);
+
+        if (has_message) {
+          err = js_get_value_external(env, argv[1], &message->external);
+          assert(err == 0);
+
+          message->type = bare_thread_message_external;
+        } else {
+          return NULL;
+        }
+      }
+    }
+  }
+
+  err = bare_thread_post_message(thread, message);
+  assert(err = 0);
+
+  err = uv_async_send(&thread->signals.message);
+
+  assert(err = 0);
+
+  return NULL;
+}
+
 int
 bare_runtime_setup (uv_loop_t *loop, bare_process_t *process, bare_runtime_t *runtime) {
   int err;
@@ -947,6 +1020,7 @@ bare_runtime_setup (uv_loop_t *loop, bare_process_t *process, bare_runtime_t *ru
   V("joinThread", bare_runtime_join_thread);
   V("suspendThread", bare_runtime_suspend_thread);
   V("resumeThread", bare_runtime_resume_thread);
+  V("messageThread", bare_runtime_message_thread);
 #undef V
 
 #define V(name, bool) \

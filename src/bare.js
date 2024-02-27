@@ -183,6 +183,10 @@ class Bare extends EventEmitter {
     this.emit('resume')
   }
 
+  _onmessage (msg) {
+    this.emit('message', msg)
+  }
+
   [Symbol.for('bare.inspect')] () {
     return {
       __proto__: { constructor: Bare },
@@ -250,6 +254,7 @@ bare.onteardown = exports._onteardown.bind(exports)
 bare.onsuspend = exports._onsuspend.bind(exports)
 bare.onidle = exports._onidle.bind(exports)
 bare.onresume = exports._onresume.bind(exports)
+bare.onmessage = exports._onmessage.bind(exports)
 
 /**
  * Step 8:

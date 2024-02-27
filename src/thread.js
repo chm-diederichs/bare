@@ -62,6 +62,10 @@ module.exports = exports = class Thread extends EventEmitter {
     if (this._handle) bare.resumeThread(this._handle)
   }
 
+  postMessage (data) {
+    if (this._handle) bare.messageThread(this._handle, data)
+  }
+
   [Symbol.for('bare.inspect')] () {
     return {
       __proto__: { constructor: Thread },
