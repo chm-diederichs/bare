@@ -246,6 +246,44 @@ bare_runtime_on_suspend_signal (uv_async_t *handle) {
 }
 
 static inline void
+bare_runtime_on_thread_exit (bare_runtime_t *runtime) {
+  int err;
+
+  js_env_t *env = runtime->env;
+
+  js_value_t *fn;
+  err = js_get_named_property(env, runtime->exports, "onthreadexit", &fn);
+  assert(err == 0);
+
+  bool is_set;
+  err = js_is_function(env, fn, &is_set);
+  assert(err == 0);
+
+  if (is_set) {
+    js_value_t *global;
+    err = js_get_global(env, &global);
+    assert(err == 0);
+
+    js_call_function(env, global, fn, 0, NULL, NULL);
+  }
+
+  if (bare_runtime_is_main_thread(runtime)) {
+    if (runtime->process->on_thread_exit) {
+      runtime->process->on_thread_exit((bare_t *) runtime->process, env);
+    }
+  }
+}
+
+static void
+bare_runtime_on_thread_exit_signal (uv_async_t *handle) {
+  bare_runtime_t *thread_runtime = (bare_runtime_t *) handle->data;
+
+  uv_unref((uv_handle_t *) &thread_runtime->signals.exit);
+
+  bare_runtime_on_thread_exit(thread_runtime->process->runtime);
+}
+
+static inline void
 bare_runtime_on_idle (bare_runtime_t *runtime) {
   int err;
 
@@ -657,6 +695,30 @@ bare_runtime_setup_thread (js_env_t *env, js_callback_info_t *info) {
 }
 
 static js_value_t *
+bare_runtime_check_thread (js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  bare_runtime_t *runtime;
+
+  size_t argc = 1;
+  js_value_t *argv[1];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, (void **) &runtime);
+  assert(err == 0);
+
+  assert(argc == 1);
+
+  bare_thread_t *thread;
+  err = js_get_value_external(env, argv[0], (void **) &thread);
+  assert(err == 0);
+
+  js_value_t *result;
+  js_create_int32(env, thread->exited == true ? 1 : 0, &result);
+
+  return result;
+}
+
+static js_value_t *
 bare_runtime_join_thread (js_env_t *env, js_callback_info_t *info) {
   int err;
 
@@ -727,6 +789,79 @@ bare_runtime_resume_thread (js_env_t *env, js_callback_info_t *info) {
   return NULL;
 }
 
+static js_value_t*
+bare_runtime_message_thread (js_env_t *env, js_callback_info_t *info) {
+  int err;
+
+  bare_runtime_t *runtime;
+
+  size_t argc = 2;
+  js_value_t *argv[2];
+
+  err = js_get_callback_info(env, info, &argc, argv, NULL, (void **) &runtime);
+  assert(err == 0);
+
+  assert(argc == 2);
+
+  bare_thread_t *thread;
+  err = js_get_value_external(env, argv[0], (void **) &thread);
+  assert(err == 0);
+
+  bare_thread_message_t *message = malloc(sizeof(bare_thread_message_t));
+  bool has_message;
+
+  err = js_is_typedarray(env, argv[1], &has_message);
+  assert(err == 0);
+
+  if (has_message) {
+    err = js_get_typedarray_info(env, argv[1], NULL, (void **) &message->buffer.base, (size_t *) &message->buffer.len, NULL, NULL);
+    assert(err == 0);
+
+    message->type = bare_thread_message_buffer;
+  } else {
+    err = js_is_arraybuffer(env, argv[1], &has_message);
+    assert(err == 0);
+
+    if (has_message) {
+      err = js_get_arraybuffer_info(env, argv[1], (void **) &message->buffer.base, (size_t *) &message->buffer.len);
+      assert(err == 0);
+
+      message->type = bare_thread_message_arraybuffer;
+    } else {
+      err = js_is_sharedarraybuffer(env, argv[1], &has_message);
+      assert(err == 0);
+
+      if (has_message) {
+        err = js_get_sharedarraybuffer_backing_store(env, argv[1], &message->backing_store);
+        assert(err == 0);
+
+        message->type = bare_thread_message_sharedarraybuffer;
+      } else {
+        err = js_is_external(env, argv[1], &has_message);
+        assert(err == 0);
+
+        if (has_message) {
+          err = js_get_value_external(env, argv[1], &message->external);
+          assert(err == 0);
+
+          message->type = bare_thread_message_external;
+        } else {
+          return NULL;
+        }
+      }
+    }
+  }
+
+  err = bare_thread_post_message(thread, message);
+  assert(err = 0);
+
+  err = uv_async_send(&thread->signals.message);
+
+  assert(err = 0);
+
+  return NULL;
+}
+
 int
 bare_runtime_setup (uv_loop_t *loop, bare_process_t *process, bare_runtime_t *runtime) {
   int err;
@@ -760,6 +895,17 @@ bare_runtime_setup (uv_loop_t *loop, bare_process_t *process, bare_runtime_t *ru
   uv_unref((uv_handle_t *) &runtime->signals.resume);
 
   runtime->active_handles = 2;
+
+  if (!bare_runtime_is_main_thread(runtime)) {
+    err = uv_async_init(runtime->process->runtime->loop, &runtime->signals.exit, bare_runtime_on_thread_exit_signal);
+    assert(err == 0);
+
+    runtime->signals.exit.data = (void *) runtime;
+
+    uv_unref((uv_handle_t *) &runtime->signals.exit);
+
+    runtime->active_handles = 3;
+  }
 
   js_env_t *env = runtime->env;
 
@@ -870,9 +1016,11 @@ bare_runtime_setup (uv_loop_t *loop, bare_process_t *process, bare_runtime_t *ru
   V("resume", bare_runtime_resume);
 
   V("setupThread", bare_runtime_setup_thread);
+  V("checkThread", bare_runtime_check_thread);
   V("joinThread", bare_runtime_join_thread);
   V("suspendThread", bare_runtime_suspend_thread);
   V("resumeThread", bare_runtime_resume_thread);
+  V("messageThread", bare_runtime_message_thread);
 #undef V
 
 #define V(name, bool) \
@@ -923,6 +1071,14 @@ bare_runtime_teardown (bare_runtime_t *runtime, int *exit_code) {
 
   uv_close((uv_handle_t *) &runtime->signals.suspend, bare_runtime_on_handle_close);
   uv_close((uv_handle_t *) &runtime->signals.resume, bare_runtime_on_handle_close);
+
+  if (runtime->active_handles > 0) {
+    uv_ref((uv_handle_t *) &runtime->signals.exit);
+
+    if (!runtime->process->runtime->exiting) {
+      uv_close((uv_handle_t *) &runtime->signals.exit, bare_runtime_on_handle_close);
+    }
+  }
 
   err = uv_run(runtime->loop, UV_RUN_DEFAULT);
   assert(err == 0);

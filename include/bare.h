@@ -22,6 +22,7 @@ typedef void (*bare_suspend_cb)(bare_t *);
 typedef void (*bare_idle_cb)(bare_t *);
 typedef void (*bare_resume_cb)(bare_t *);
 typedef void (*bare_thread_cb)(bare_t *, js_env_t *);
+typedef void (*bare_thread_exit_cb)(bare_t *, js_env_t *);
 
 /** @version 0 */
 struct bare_options_s {
@@ -124,6 +125,9 @@ bare_on_resume (bare_t *bare, bare_resume_cb cb);
  */
 int
 bare_on_thread (bare_t *bare, bare_thread_cb cb);
+
+int
+bare_on_thread_exit (bare_t *bare, bare_thread_exit_cb cb);
 
 #ifdef __cplusplus
 }

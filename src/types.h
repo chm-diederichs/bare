@@ -13,6 +13,8 @@ typedef struct bare_source_s bare_source_t;
 typedef struct bare_thread_s bare_thread_t;
 typedef struct bare_thread_source_s bare_thread_source_t;
 typedef struct bare_thread_data_s bare_thread_data_t;
+typedef struct bare_thread_message_s bare_thread_message_t;
+typedef struct bare_thread_message_buffer_s bare_thread_message_buffer_t;
 typedef struct bare_thread_list_s bare_thread_list_t;
 typedef struct bare_module_list_s bare_module_list_t;
 
@@ -27,6 +29,7 @@ struct bare_runtime_s {
   struct {
     uv_async_t suspend;
     uv_async_t resume;
+    uv_async_t exit;
   } signals;
 
   int active_handles;
@@ -52,6 +55,7 @@ struct bare_process_s {
   bare_idle_cb on_idle;
   bare_resume_cb on_resume;
   bare_thread_cb on_thread;
+  bare_thread_exit_cb on_thread_exit;
 };
 
 struct bare_source_s {
@@ -94,8 +98,35 @@ struct bare_thread_data_s {
   };
 };
 
+struct bare_thread_message_s {
+  enum {
+    bare_thread_message_buffer,
+    bare_thread_message_arraybuffer,
+    bare_thread_message_sharedarraybuffer,
+    bare_thread_message_external,
+  } type;
+
+  union {
+    uv_buf_t buffer;
+    js_arraybuffer_backing_store_t *backing_store;
+    void *external;
+  };
+};
+
+struct bare_thread_message_buffer_s {
+  int size;
+  int length;
+  bare_thread_message_t **data;
+};
+
 struct bare_thread_s {
   bare_runtime_t *runtime;
+
+  struct {
+    uv_async_t message;
+  } signals;
+
+  bare_thread_message_buffer_t *message_buffer;
 
   uv_thread_t id;
   uv_sem_t lock;
